@@ -64,6 +64,10 @@ set -x
 # Go to root
 cd ..
 root_path=$PWD
+# Set a Windows path for GitBash on Windows
+if [ $AGENT_OS == 'Windows_NT' ]; then
+  root_path=$(cmd //c cd)
+fi
 
 if hash npm 2>/dev/null
 then
