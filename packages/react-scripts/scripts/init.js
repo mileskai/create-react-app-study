@@ -80,18 +80,14 @@ module.exports = function(
   appName,
   verbose,
   originalDirectory,
-  template
+  templateName
 ) {
-  const ownPath = path.dirname(
-    require.resolve(path.join(__dirname, '..', 'package.json'))
-  );
   const appPackage = require(path.join(appPath, 'package.json'));
   const useYarn = fs.existsSync(path.join(appPath, 'yarn.lock'));
+  const templatePath = path.join(appPath, 'node_modules', templateName);
 
   // Copy over some of the devDependencies
   appPackage.dependencies = appPackage.dependencies || {};
-
-  const useTypeScript = appPackage.dependencies['typescript'] != null;
 
   // Setup the script rules
   appPackage.scripts = {
@@ -123,14 +119,12 @@ module.exports = function(
   }
 
   // Copy the files for the user
-  const templatePath = template
-    ? path.resolve(originalDirectory, template)
-    : path.join(ownPath, useTypeScript ? 'template-typescript' : 'template');
-  if (fs.existsSync(templatePath)) {
-    fs.copySync(templatePath, appPath);
+  const templateDir = path.join(templatePath, 'template');
+  if (fs.existsSync(templateDir)) {
+    fs.copySync(templateDir, appPath);
   } else {
     console.error(
-      `Could not locate supplied template: ${chalk.green(templatePath)}`
+      `Could not locate supplied template: ${chalk.green(templateDir)}`
     );
     return;
   }
@@ -173,36 +167,46 @@ module.exports = function(
   }
 
   let command;
+  let remove;
   let args;
 
   if (useYarn) {
     command = 'yarnpkg';
+    remove = 'remove';
     args = ['add'];
   } else {
     command = 'npm';
+    remove = 'uninstall';
     args = ['install', '--save', verbose && '--verbose'].filter(e => e);
   }
-  args.push('react', 'react-dom');
 
   // Install additional template dependencies, if present
-  const templateDependenciesPath = path.join(
-    appPath,
-    '.template.dependencies.json'
-  );
-  if (fs.existsSync(templateDependenciesPath)) {
-    const templateDependencies = require(templateDependenciesPath).dependencies;
+  let templateJsonPath;
+  if (templateName) {
+    templateJsonPath = path.join(templatePath, 'template.json');
+  } else {
+    templateJsonPath = path.join(appPath, '.template.dependencies.json');
+  }
+
+  if (fs.existsSync(templateJsonPath)) {
+    const templateDependencies = require(templateJsonPath).dependencies;
+    console.log(templateDependencies);
     args = args.concat(
       Object.keys(templateDependencies).map(key => {
         return `${key}@${templateDependencies[key]}`;
       })
     );
-    fs.unlinkSync(templateDependenciesPath);
+    fs.unlinkSync(templateJsonPath);
   }
 
   // Install react and react-dom for backward compatibility with old CRA cli
   // which doesn't install react and react-dom along with react-scripts
-  // or template is presetend (via --internal-testing-template)
-  if (!isReactInstalled(appPackage) || template) {
+  if (!isReactInstalled(appPackage)) {
+    args = args.concat(['react', 'react-dom']);
+  }
+
+  // Install template dependencies, and react and react-dom if missing.
+  if ((!isReactInstalled(appPackage) || templateName) && args.length > 1) {
     console.log(`Installing react and react-dom using ${command}...`);
     console.log();
 
@@ -213,13 +217,26 @@ module.exports = function(
     }
   }
 
-  if (useTypeScript) {
+  if (appPackage.dependencies['typescript'] != null) {
     verifyTypeScriptSetup();
   }
 
   if (tryGitInit(appPath)) {
     console.log();
     console.log('Initialized a git repository.');
+  }
+
+  // Remove template
+  console.log();
+  console.log(`Removing template package using ${command}...`);
+  console.log();
+
+  const proc = spawn.sync(command, [remove, templateName], {
+    stdio: 'inherit',
+  });
+  if (proc.status !== 0) {
+    console.error(`\`${command} ${args.join(' ')}\` failed`);
+    return;
   }
 
   // Display the most elegant way to cd.

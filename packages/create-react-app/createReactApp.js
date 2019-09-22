@@ -76,9 +76,17 @@ const program = new commander.Command(packageJson.name)
     '--scripts-version <alternative-package>',
     'use a non-standard version of react-scripts'
   )
+  .option(
+    '--template <path-to-template>',
+    'specify or use a non-standard template'
+  )
   .option('--use-npm')
   .option('--use-pnp')
-  .option('--typescript')
+  // TODO: Remove this in next major release.
+  .option(
+    '--typescript',
+    '(this option will be removed in favour of templates in the next major release of create-react-app)'
+  )
   .allowUnknownOption()
   .on('--help', () => {
     console.log(`    Only ${chalk.green('<project-directory>')} is required.`);
@@ -110,6 +118,28 @@ const program = new commander.Command(packageJson.name)
     );
     console.log(
       `    It is not needed unless you specifically want to use a fork.`
+    );
+    console.log();
+    console.log(`    A custom ${chalk.cyan('--template')} can be one of:`);
+    console.log(
+      `      - a custom fork published on npm: ${chalk.green(
+        'cra-template-typescript'
+      )}`
+    );
+    console.log(
+      `      - a local path relative to the current working directory: ${chalk.green(
+        'file:../my-custom-template'
+      )}`
+    );
+    console.log(
+      `      - a .tgz archive: ${chalk.green(
+        'https://mysite.com/my-custom-template-0.8.2.tgz'
+      )}`
+    );
+    console.log(
+      `      - a .tar.gz archive: ${chalk.green(
+        'https://mysite.com/my-custom-template-0.8.2.tar.gz'
+      )}`
     );
     console.log();
     console.log(
@@ -166,32 +196,24 @@ function printValidationResults(results) {
   }
 }
 
-const hiddenProgram = new commander.Command()
-  .option(
-    '--internal-testing-template <path-to-template>',
-    '(internal usage only, DO NOT RELY ON THIS) ' +
-      'use a non-standard application template'
-  )
-  .parse(process.argv);
-
 createApp(
   projectName,
   program.verbose,
   program.scriptsVersion,
+  program.template,
   program.useNpm,
   program.usePnp,
-  program.typescript,
-  hiddenProgram.internalTestingTemplate
+  program.typescript
 );
 
 function createApp(
   name,
   verbose,
   version,
+  template,
   useNpm,
   usePnp,
-  useTypescript,
-  template
+  useTypeScript
 ) {
   const root = path.resolve(name);
   const appName = path.basename(root);
@@ -263,6 +285,23 @@ function createApp(
     }
   }
 
+  if (useTypeScript) {
+    console.log(
+      chalk.yellow(
+        'The --typescript option has been deprecated and will be removed in a future release.'
+      )
+    );
+    console.log(
+      chalk.yellow(
+        `In future, please use ${chalk.cyan('--template typescript')}.`
+      )
+    );
+    console.log();
+    if (!template) {
+      template = 'typescript';
+    }
+  }
+
   if (useYarn) {
     let yarnUsesDefaultRegistry = true;
     try {
@@ -289,8 +328,7 @@ function createApp(
     originalDirectory,
     template,
     useYarn,
-    usePnp,
-    useTypescript
+    usePnp
   );
 }
 
@@ -373,38 +411,38 @@ function run(
   originalDirectory,
   template,
   useYarn,
-  usePnp,
-  useTypescript
+  usePnp
 ) {
-  getInstallPackage(version, originalDirectory).then(packageToInstall => {
-    const allDependencies = ['react', 'react-dom', packageToInstall];
-    if (useTypescript) {
-      allDependencies.push(
-        // TODO: get user's node version instead of installing latest
-        '@types/node',
-        '@types/react',
-        '@types/react-dom',
-        // TODO: get version of Jest being used instead of installing latest
-        '@types/jest',
-        'typescript'
-      );
-    }
+  Promise.all([
+    getInstallPackage(version, originalDirectory),
+    getTemplateInstallPackage(template, originalDirectory),
+  ]).then(([packageToInstall, templateToInstall]) => {
+    const allDependencies = [
+      'react',
+      'react-dom',
+      packageToInstall,
+      templateToInstall,
+    ];
 
     console.log('Installing packages. This might take a couple of minutes.');
-    getPackageName(packageToInstall)
-      .then(packageName =>
+    Promise.all([
+      getPackageName(packageToInstall),
+      getPackageName(templateToInstall),
+    ])
+      .then(([packageName, templateName]) =>
         checkIfOnline(useYarn).then(isOnline => ({
-          isOnline: isOnline,
-          packageName: packageName,
+          isOnline,
+          packageName,
+          templateName,
         }))
       )
-      .then(info => {
-        const isOnline = info.isOnline;
-        const packageName = info.packageName;
+      .then(({ isOnline, packageName, templateName }) => {
         console.log(
           `Installing ${chalk.cyan('react')}, ${chalk.cyan(
             'react-dom'
-          )}, and ${chalk.cyan(packageName)}...`
+          )}, and ${chalk.cyan(packageName)} with ${chalk.cyan(
+            templateName
+          )}...`
         );
         console.log();
 
@@ -415,9 +453,12 @@ function run(
           allDependencies,
           verbose,
           isOnline
-        ).then(() => packageName);
+        ).then(() => ({
+          packageName,
+          templateName,
+        }));
       })
-      .then(async packageName => {
+      .then(async ({ packageName, templateName }) => {
         checkNodeVersion(packageName);
         setCaretRangeForRuntimeDeps(packageName);
 
@@ -430,7 +471,7 @@ function run(
             cwd: process.cwd(),
             args: nodeArgs,
           },
-          [root, appName, verbose, originalDirectory, template],
+          [root, appName, verbose, originalDirectory, templateName],
           `
         var init = require('${packageName}/scripts/init.js');
         init.apply(null, JSON.parse(process.argv[1]));
@@ -515,7 +556,9 @@ function getInstallPackage(version, originalDirectory) {
     {
       name: 'react-scripts-ts',
       message: chalk.yellow(
-        'The react-scripts-ts package is deprecated. TypeScript is now supported natively in Create React App. You can use the --typescript option instead when generating your app to include TypeScript support. Would you like to continue using react-scripts-ts?'
+        `The react-scripts-ts package is deprecated. TypeScript is now supported natively in Create React App. You can use the ${chalk.green(
+          '--template typescript'
+        )} option instead when generating your app to include TypeScript support. Would you like to continue using react-scripts-ts?`
       ),
     },
   ];
@@ -540,6 +583,29 @@ function getInstallPackage(version, originalDirectory) {
   }
 
   return Promise.resolve(packageToInstall);
+}
+
+function getTemplateInstallPackage(template, originalDirectory) {
+  let templateToInstall = 'create-react-app-template';
+  if (template) {
+    if (template.startsWith('file:')) {
+      templateToInstall = `file:${path.resolve(
+        originalDirectory,
+        template.match(/^file:(.*)?$/)[1]
+      )}`;
+    } else if (
+      template.includes('://') ||
+      template.match(/^.+\.(tgz|tar\.gz)$/)
+    ) {
+      // for tar.gz or alternative paths
+      templateToInstall = template;
+    } else if (!template.startsWith(templateToInstall)) {
+      // Add prefix `create-react-app-template` to non-prefixed templates.
+      templateToInstall += `-${template}`;
+    }
+  }
+
+  return Promise.resolve(templateToInstall);
 }
 
 function getTemporaryDirectory() {
