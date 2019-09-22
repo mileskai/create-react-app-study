@@ -588,7 +588,7 @@ function getInstallPackage(version, originalDirectory) {
 function getTemplateInstallPackage(template, originalDirectory) {
   let templateToInstall = 'create-react-app-template';
   if (template) {
-    if (template.startsWith('file:')) {
+    if (template.match(/^file:/)) {
       templateToInstall = `file:${path.resolve(
         originalDirectory,
         template.match(/^file:(.*)?$/)[1]

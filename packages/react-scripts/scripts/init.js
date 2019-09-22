@@ -190,7 +190,6 @@ module.exports = function(
 
   if (fs.existsSync(templateJsonPath)) {
     const templateDependencies = require(templateJsonPath).dependencies;
-    console.log(templateDependencies);
     args = args.concat(
       Object.keys(templateDependencies).map(key => {
         return `${key}@${templateDependencies[key]}`;
@@ -207,7 +206,8 @@ module.exports = function(
 
   // Install template dependencies, and react and react-dom if missing.
   if ((!isReactInstalled(appPackage) || templateName) && args.length > 1) {
-    console.log(`Installing react and react-dom using ${command}...`);
+    console.log();
+    console.log(`Installing template dependencies using ${command}...`);
     console.log();
 
     const proc = spawn.sync(command, args, { stdio: 'inherit' });
@@ -221,11 +221,6 @@ module.exports = function(
     verifyTypeScriptSetup();
   }
 
-  if (tryGitInit(appPath)) {
-    console.log();
-    console.log('Initialized a git repository.');
-  }
-
   // Remove template
   console.log();
   console.log(`Removing template package using ${command}...`);
@@ -237,6 +232,11 @@ module.exports = function(
   if (proc.status !== 0) {
     console.error(`\`${command} ${args.join(' ')}\` failed`);
     return;
+  }
+
+  if (tryGitInit(appPath)) {
+    console.log();
+    console.log('Initialized a git repository.');
   }
 
   // Display the most elegant way to cd.
