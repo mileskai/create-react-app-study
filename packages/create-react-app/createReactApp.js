@@ -417,32 +417,62 @@ function run(
     getInstallPackage(version, originalDirectory),
     getTemplateInstallPackage(template, originalDirectory),
   ]).then(([packageToInstall, templateToInstall]) => {
-    const allDependencies = [
-      'react',
-      'react-dom',
-      packageToInstall,
-      templateToInstall,
-    ];
+    const allDependencies = ['react', 'react-dom', packageToInstall];
 
     console.log('Installing packages. This might take a couple of minutes.');
+
     Promise.all([
-      getPackageName(packageToInstall),
-      getPackageName(templateToInstall),
+      getPackageInfo(packageToInstall),
+      getPackageInfo(templateToInstall),
     ])
-      .then(([packageName, templateName]) =>
+      .then(([packageInfo, templateInfo]) =>
         checkIfOnline(useYarn).then(isOnline => ({
           isOnline,
-          packageName,
-          templateName,
+          packageInfo,
+          templateInfo,
         }))
       )
-      .then(({ isOnline, packageName, templateName }) => {
+      .then(({ isOnline, packageInfo, templateInfo }) => {
+        let packageVersion = packageInfo.version;
+
+        // Assume compatibility if we can't test the version.
+        if (!semver.valid(packageVersion)) {
+          packageVersion = '3.2.0';
+        }
+
+        // Only support templates when used alongside new react-scripts versions.
+        const supportsTemplates = semver.gte(packageVersion, '3.2.0');
+        if (supportsTemplates) {
+          allDependencies.push(templateToInstall);
+        } else if (template) {
+          console.log('');
+          console.log(
+            `The ${chalk.cyan(
+              packageInfo.name
+            )} version you're using is not compatible with the ${chalk.cyan(
+              '--template'
+            )} option.`
+          );
+          console.log('');
+        }
+
+        // TODO: Remove with next major release.
+        if (!supportsTemplates && template.includes('typescript')) {
+          allDependencies.push(
+            '@types/node',
+            '@types/react',
+            '@types/react-dom',
+            '@types/jest',
+            'typescript'
+          );
+        }
+
         console.log(
           `Installing ${chalk.cyan('react')}, ${chalk.cyan(
             'react-dom'
-          )}, and ${chalk.cyan(packageName)} with ${chalk.cyan(
-            templateName
-          )}...`
+          )}, and ${chalk.cyan(packageInfo.name)}${
+            supportsTemplates ? ` with ${chalk.cyan(templateInfo.name)}` : ''
+          }...`
         );
         console.log();
 
@@ -454,11 +484,14 @@ function run(
           verbose,
           isOnline
         ).then(() => ({
-          packageName,
-          templateName,
+          packageInfo,
+          supportsTemplates,
+          templateInfo,
         }));
       })
-      .then(async ({ packageName, templateName }) => {
+      .then(async ({ packageInfo, supportsTemplates, templateInfo }) => {
+        const packageName = packageInfo.name;
+        const templateName = supportsTemplates ? templateInfo.name : undefined;
         checkNodeVersion(packageName);
         setCaretRangeForRuntimeDeps(packageName);
 
@@ -647,7 +680,7 @@ function extractStream(stream, dest) {
 }
 
 // Extract package name from tarball url or path.
-function getPackageName(installPackage) {
+function getPackageInfo(installPackage) {
   if (installPackage.match(/^.+\.(tgz|tar\.gz)$/)) {
     return getTemporaryDirectory()
       .then(obj => {
@@ -660,9 +693,12 @@ function getPackageName(installPackage) {
         return extractStream(stream, obj.tmpdir).then(() => obj);
       })
       .then(obj => {
-        const packageName = require(path.join(obj.tmpdir, 'package.json')).name;
+        const { name, version } = require(path.join(
+          obj.tmpdir,
+          'package.json'
+        ));
         obj.cleanup();
-        return packageName;
+        return { name, version };
       })
       .catch(err => {
         // The package name could be with or without semver version, e.g. react-scripts-0.2.0-alpha.1.tgz
@@ -678,27 +714,30 @@ function getPackageName(installPackage) {
             assumedProjectName
           )}"`
         );
-        return Promise.resolve(assumedProjectName);
+        return Promise.resolve({ name: assumedProjectName });
       });
   } else if (installPackage.indexOf('git+') === 0) {
     // Pull package name out of git urls e.g:
     // git+https://github.com/mycompany/react-scripts.git
     // git+ssh://github.com/mycompany/react-scripts.git#v1.2.3
-    return Promise.resolve(installPackage.match(/([^/]+)\.git(#.*)?$/)[1]);
+    return Promise.resolve({
+      name: installPackage.match(/([^/]+)\.git(#.*)?$/)[1],
+    });
   } else if (installPackage.match(/.+@/)) {
     // Do not match @scope/ when stripping off @version or @tag
-    return Promise.resolve(
-      installPackage.charAt(0) + installPackage.substr(1).split('@')[0]
-    );
+    return Promise.resolve({
+      name: installPackage.charAt(0) + installPackage.substr(1).split('@')[0],
+      version: installPackage.split('@')[1],
+    });
   } else if (installPackage.match(/^file:/)) {
     const installPackagePath = installPackage.match(/^file:(.*)?$/)[1];
-    const installPackageJson = require(path.join(
+    const { name, version } = require(path.join(
       installPackagePath,
       'package.json'
     ));
-    return Promise.resolve(installPackageJson.name);
+    return Promise.resolve({ name, version });
   }
-  return Promise.resolve(installPackage);
+  return Promise.resolve({ name: installPackage });
 }
 
 function checkNpmVersion() {
