@@ -162,6 +162,8 @@ exists tsconfig.json
 exists src/react-app-env.d.ts
 checkTypeScriptDependencies
 
+node node_modules/react-scripts/scripts/utils/verifyTypeScriptSetup.js
+
 # Check that the TypeScript template passes smoke tests, build, and normal tests
 yarn start --smoke-test
 yarn build

@@ -224,7 +224,6 @@ module.exports = function(
   if ((!isReactInstalled(appPackage) || templateName) && args.length > 1) {
     console.log();
     console.log(`Installing template dependencies using ${command}...`);
-    console.log();
 
     const proc = spawn.sync(command, args, { stdio: 'inherit' });
     if (proc.status !== 0) {
@@ -233,12 +232,12 @@ module.exports = function(
     }
   }
 
-  if (appPackage.dependencies['typescript'] != null) {
+  if (args.find(arg => arg.includes('typescript'))) {
+    console.log();
     verifyTypeScriptSetup();
   }
 
   // Remove template
-  console.log();
   console.log(`Removing template package using ${command}...`);
   console.log();
 
