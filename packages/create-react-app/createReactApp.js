@@ -78,7 +78,7 @@ const program = new commander.Command(packageJson.name)
   )
   .option(
     '--template <path-to-template>',
-    'specify or use a non-standard template'
+    'specify a template for the created project'
   )
   .option('--use-npm')
   .option('--use-pnp')
@@ -434,14 +434,18 @@ function run(
       )
       .then(({ isOnline, packageInfo, templateInfo }) => {
         let packageVersion = packageInfo.version;
+        const templatesVersionMinimum = '3.3.0';
 
         // Assume compatibility if we can't test the version.
         if (!semver.valid(packageVersion)) {
-          packageVersion = '3.2.0';
+          packageVersion = templatesVersionMinimum;
         }
 
         // Only support templates when used alongside new react-scripts versions.
-        const supportsTemplates = semver.gte(packageVersion, '3.2.0');
+        const supportsTemplates = semver.gte(
+          packageVersion,
+          templatesVersionMinimum
+        );
         if (supportsTemplates) {
           allDependencies.push(templateToInstall);
         } else if (template) {
@@ -619,7 +623,7 @@ function getInstallPackage(version, originalDirectory) {
 }
 
 function getTemplateInstallPackage(template, originalDirectory) {
-  let templateToInstall = 'create-react-app-template';
+  let templateToInstall = 'cra-template';
   if (template) {
     if (template.match(/^file:/)) {
       templateToInstall = `file:${path.resolve(
@@ -633,7 +637,7 @@ function getTemplateInstallPackage(template, originalDirectory) {
       // for tar.gz or alternative paths
       templateToInstall = template;
     } else if (!template.startsWith(templateToInstall)) {
-      // Add prefix `create-react-app-template` to non-prefixed templates.
+      // Add prefix `cra-template` to non-prefixed templates.
       templateToInstall += `-${template}`;
     }
   }
